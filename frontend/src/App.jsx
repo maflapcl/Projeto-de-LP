@@ -1,6 +1,9 @@
 
 import { useEffect, useState } from 'react';
-import { listarAlunos, cadastrarAluno } from './services/api';
+import {  listarAlunos,
+  cadastrarAluno,
+  editarAluno,
+  excluirAluno,} from './services/api';
 import './App.css';
 
 const formularioInicial = {
@@ -19,8 +22,22 @@ function App() {
   const [formulario, setFormulario] = useState(formularioInicial);
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
+  
+  const [alunoEmEdicao, setAlunoEmEdicao] = useState(null);
+
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
+
+  useEffect(() => {
+  if (!erro && !sucesso) return;
+
+  const temporizador = setTimeout(() => {
+    setErro('');
+    setSucesso('');
+  }, 4000);
+
+  return () => clearTimeout(temporizador);
+}, [erro, sucesso]);
 
   async function carregarAlunos() {
     try {
@@ -38,44 +55,147 @@ function App() {
     carregarAlunos();
   }, []);
 
-  function atualizarCampo(evento) {
-    const { name, value } = evento.target;
+function iniciarEdicao(aluno) {
+  setAlunoEmEdicao(aluno.id);
 
-    setFormulario((anterior) => ({
-      ...anterior,
-      [name]: value,
-    }));
-  }
+  setFormulario({
+    nome: aluno.nome,
+    matricula: String(aluno.matricula),
+    email: aluno.email,
+    telefone: aluno.telefone,
+    turma: aluno.turma,
+    ano_escolar: String(aluno.ano_escolar),
+    data_nascimento: aluno.data_nascimento?.slice(0, 10) || '',
+    data_matricula: aluno.data_matricula?.slice(0, 10) || '',
+  });
 
-  async function enviarFormulario(evento) {
-    evento.preventDefault();
-    setErro('');
-    setSucesso('');
-    setSalvando(true);
+  
+function cancelarEdicao() {
+  setAlunoEmEdicao(null);
+  setFormulario({ ...formularioInicial });
+  setErro('');
+  setSucesso('');
+}
 
-    try {
-      await cadastrarAluno({
-        ...formulario,
-        matricula: Number(formulario.matricula),
-        ano_escolar: Number(formulario.ano_escolar),
-      });
 
-      setFormulario(formularioInicial);
-      setSucesso('Aluno cadastrado com sucesso!');
-      await carregarAlunos();
-    } catch (e) {
-      setErro(e.message);
-    } finally {
-      setSalvando(false);
+  setErro('');
+  setSucesso('');
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+  
+function atualizarCampo(evento) {
+  const { name, value } = evento.target;
+
+  let novoValor = value;
+
+  if (name === 'telefone') {
+    const numeros = value.replace(/\D/g, '').slice(0, 11);
+
+    if (numeros.length > 10) {
+      novoValor = numeros.replace(
+        /^(\d{2})(\d{5})(\d{0,4})$/,
+        '($1) $2-$3'
+      );
+    } else if (numeros.length > 6) {
+      novoValor = numeros.replace(
+        /^(\d{2})(\d{4})(\d{0,4})$/,
+        '($1) $2-$3'
+      );
+    } else if (numeros.length > 2) {
+      novoValor = numeros.replace(/^(\d{2})(\d+)/, '($1) $2');
+    } else if (numeros.length > 0) {
+      novoValor = `(${numeros}`;
     }
   }
+
+  setFormulario((anterior) => ({
+    ...anterior,
+    [name]: novoValor,
+  }));
+}
+
+
+  async function enviarFormulario(evento) {
+  evento.preventDefault();
+  setErro('');
+  setSucesso('');
+  setSalvando(true);
+
+  try {
+    const dados = {
+      ...formulario,
+      matricula: Number(formulario.matricula),
+      ano_escolar: Number(formulario.ano_escolar),
+    };
+
+    if (alunoEmEdicao !== null) {
+      await editarAluno(alunoEmEdicao, dados);
+      setSucesso('Aluno atualizado com sucesso!');
+    } else {
+      await cadastrarAluno(dados);
+      setSucesso('Aluno cadastrado com sucesso!');
+    }
+
+    setFormulario({ ...formularioInicial });
+    setAlunoEmEdicao(null);
+
+    await carregarAlunos();
+  } catch (e) {
+    setErro(e.message);
+  } finally {
+    setSalvando(false);
+  }
+}
+  
+async function removerAluno(aluno) {
+  const confirmar = window.confirm(
+    `Tem certeza que deseja excluir o aluno ${aluno.nome}?`
+  );
+
+  if (!confirmar) {
+    return;
+  }
+
+  setErro('');
+  setSucesso('');
+
+  try {
+    await excluirAluno(aluno.id);
+
+    if (alunoEmEdicao === aluno.id) {
+      setAlunoEmEdicao(null);
+      setFormulario({ ...formularioInicial });
+    }
+
+
+
+    await carregarAlunos();
+    setSucesso('Aluno excluído com sucesso!');
+  } catch (e) {
+    setErro(e.message);
+  }
+}
+
+  function cancelarEdicao() {
+  setAlunoEmEdicao(null);
+  setFormulario({ ...formularioInicial });
+  setErro('');
+  setSucesso('');
+}
 
   return (
     <main className="container">
       <h1>Cadastro de Alunos</h1>
 
       <section>
-        <h2>Cadastrar novo aluno</h2>
+        <h2>
+  {alunoEmEdicao !== null
+    ? 'Editar aluno'
+    : 'Cadastrar novo aluno'}
+        </h2>
+      
 
         <form onSubmit={enviarFormulario}>
           <label>
@@ -120,7 +240,9 @@ function App() {
               value={formulario.telefone}
               onChange={atualizarCampo}
               required
-              maxLength={20}
+              maxLength={15}
+              placeholder="(13) 99999-9999"
+
             />
           </label>
 
@@ -170,8 +292,24 @@ function App() {
           </label>
 
           <button type="submit" disabled={salvando}>
-            {salvando ? 'Salvando...' : 'Cadastrar aluno'}
+           {salvando
+            ? 'Salvando...'
+              : alunoEmEdicao !== null
+                ? 'Salvar alterações'
+                : 'Cadastrar aluno'}
           </button>
+          
+          {alunoEmEdicao !== null && (
+            <button
+              type="button"
+              className="botao-cancelar"
+              onClick={cancelarEdicao}
+              disabled={salvando}
+            >
+              Cancelar edição
+            </button>
+          )}
+
         </form>
 
         {erro && <p className="erro">{erro}</p>}
@@ -196,6 +334,7 @@ function App() {
                   <th>Telefone</th>
                   <th>Turma</th>
                   <th>Ano escolar</th>
+                  <th>Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -207,6 +346,15 @@ function App() {
                     <td>{aluno.telefone}</td>
                     <td>{aluno.turma}</td>
                     <td>{aluno.ano_escolar}</td>
+                    <td>
+                    <button type="button"  
+                    onClick={() => iniciarEdicao(aluno)}>
+                      Editar
+                    </button>
+                     <button type="button" onClick={() => removerAluno(aluno)}>
+                      Excluir
+                    </button>
+                  </td>
                   </tr>
                 ))}
               </tbody>
